@@ -318,7 +318,7 @@ class Program
 
     static void CheckUDPTelemetryData()
     {
-        if (HAVE_UDP_PORT)
+        if (HAVE_TELEMETRY_PORT)
         {
             try
             {
