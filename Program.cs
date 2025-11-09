@@ -49,8 +49,7 @@ class Program
     // ----------------------------------------------------------------
     static void MakeLogFileIfNotExists()
     {
-        today = DateTime.Now;
-        filePath = fileSpec.Replace("[DATETIME]", today.ToString(wrapDaily ? FILE_DATE_FORMAT : FILE_DATE_TIME_FORMAT));
+        filePath = fileSpec.Replace("[DATETIME]", today.ToString(wrapDaily ? FILE_DATE_FORMAT : FILE_DATE_TIME_FORMAT)) + ".log";
 
         string title = portName + "->" + filePath;
         SetConsoleTitle(title);
@@ -63,7 +62,6 @@ class Program
             if (fileExists)
             {
                 Console.WriteLine($"Appending to file [{filePath}]");
-
             }
             else
             {
@@ -85,8 +83,12 @@ class Program
 
     static void MakeSQLiteDatabase()
     {
-        string dbPath = "c:\\temp\\packets.db";
-        SQLiteConnection.CreateFile(dbPath);
+        string dbPath = fileSpec.Replace("[DATETIME]", today.ToString(wrapDaily ? FILE_DATE_FORMAT : FILE_DATE_TIME_FORMAT)) + ".db";
+        bool createNewDatabase = !File.Exists(dbPath);
+        if (createNewDatabase)
+        {
+            SQLiteConnection.CreateFile(dbPath);
+        }
 
         sqliteConnection = new SQLiteConnection($"Data Source={dbPath};Version=3;");
         sqliteConnection.Open();
@@ -94,8 +96,11 @@ class Program
         using (var cmd = new SQLiteCommand("PRAGMA journal_mode=WAL;", sqliteConnection))
             cmd.ExecuteNonQuery();
 
-        using (var cmd = new SQLiteCommand("CREATE TABLE packets (id INTEGER PRIMARY KEY, dt INTEGER, src INTEGER, port INTEGER, data BLOB);", sqliteConnection))
-            cmd.ExecuteNonQuery();
+        if (createNewDatabase)
+        {
+            using (var cmd = new SQLiteCommand("CREATE TABLE packets (id INTEGER PRIMARY KEY, dt INTEGER, src INTEGER, port INTEGER, data BLOB);", sqliteConnection))
+                cmd.ExecuteNonQuery();
+        }
     }
 
     // ----------------------------------------------------------------
@@ -180,7 +185,7 @@ class Program
 
     static void CheckSerialPortConnected()
     {
-        if (HAVE_SERIAL_PORT)
+        if (HAVE_SERIAL_PORT && HAVE_BAUD_RATE)
         {
             Console.Write($"Opening {portName} ");
             while (serialPort == null && keepRunning)
@@ -192,10 +197,13 @@ class Program
                     serialPort = new SerialPort(portName, baudRate);
                     serialPort.Open();
                 }
-                catch /*(Exception ex)*/
+                catch (Exception ex)
                 {
-                    // Console.WriteLine($"Error: {ex.Message}");
-                    serialPort.Dispose();
+                    Console.WriteLine($"Error: {ex.Message}");
+                    if (serialPort != null)
+                    {
+                        serialPort.Dispose();
+                    }
                     serialPort = null;
                     System.Threading.Thread.Sleep(500);
                 }
@@ -218,7 +226,7 @@ class Program
     // ----------------------------------------------------------------
     static bool CheckSerialPortData()
     {
-        if (HAVE_SERIAL_PORT)
+        if (HAVE_SERIAL_PORT && HAVE_BAUD_RATE)
         {
             // Read all the data from the serial port
             try
@@ -449,10 +457,12 @@ class Program
             return;
         }
 
+        today = DateTime.Now;
         MakeLogFileIfNotExists();
 
         while (keepRunning)
         {
+            today = DateTime.Now;
             CheckSerialPortConnected();
             StartLogListener();
             StartTelemetryListeners();
