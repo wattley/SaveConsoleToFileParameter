@@ -321,7 +321,7 @@ class Program
     static SQLiteTransaction tx = null;
     const int batchSize = 100 * 1000;    // bytes required before writing to database
     const int writeDelayMs = 5000;  // milliseconds to wait after no longer receiving data before writing a batch to database
-    static DateTime writeIsDue = DateTime.Now;
+    static DateTime writeIsDue = DateTime.Now, lastWriteTime = DateTime.MinValue;
     static int dataReceived = 0;
 
     static void CheckUDPTelemetryData()
@@ -358,6 +358,10 @@ class Program
 
                             cmd.ExecuteNonQuery();
 
+                            if (lastWriteTime == DateTime.MinValue)
+                            {
+                                lastWriteTime = DateTime.Now;
+                            }
                             dataReceived += buffer.Length;
                         }
                     }
@@ -370,14 +374,18 @@ class Program
             }
             if (dataReceived > 0)
             {
-                if (dataReceived >= batchSize || DateTime.Now >= writeIsDue)
+                DateTime now = DateTime.Now;
+                if (dataReceived >= batchSize || now >= writeIsDue)
                 {
+                    TimeSpan elapsed = now - lastWriteTime;
+                    float rate = 8 * dataReceived / (float)elapsed.TotalSeconds / 1000f;
+                    lastWriteTime = now;
                     tx.Commit();
                     tx.Dispose();
                     tx = null;
-                    Console.WriteLine($"Wrote {dataReceived} bytes to database");
+                    Console.WriteLine($"Wrote [{dataReceived}] bytes to database; rate = [{rate}] kbps");
                     dataReceived = 0;
-                    writeIsDue = DateTime.Now.AddMilliseconds(writeDelayMs);
+                    writeIsDue = now.AddMilliseconds(writeDelayMs);
                 }
             }
         }
